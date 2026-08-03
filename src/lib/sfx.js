@@ -19,10 +19,13 @@ const PRE_DELAY = 0.022
 
 const BELL_SEND = 0.55
 const BEEP_SEND = 0.16
+/** Wet enough to sound like a hall PA, dry enough to keep the count crisp. */
+const VOICE_SEND = 0.3
 
 let ctx = null
 let reverbSend = null
 let masterBus = null
+let voiceIn = null
 
 function context() {
   if (!ctx) {
@@ -126,6 +129,17 @@ function output(wet) {
     input.connect(send).connect(bus)
   }
   return input
+}
+
+/**
+ * Shared input for announcer audio, so a rendered voice line lands in the same
+ * hall as the bell. Returns null where Web Audio is unavailable.
+ */
+export function voiceDestination() {
+  const ac = context()
+  if (!ac) return null
+  if (!voiceIn) voiceIn = output(VOICE_SEND)
+  return { ac, input: voiceIn }
 }
 
 /** Must be called from a user gesture, otherwise browsers keep audio suspended. */

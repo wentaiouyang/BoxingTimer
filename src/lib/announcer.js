@@ -1,7 +1,14 @@
 /**
- * Ring-announcer voice, built on the browser's SpeechSynthesis API.
- * English only, deliberately theatrical.
+ * Ring-announcer voice. English only, deliberately theatrical.
+ *
+ * Two engines. Preferred is `voiceAudio`, which renders each line to a buffer
+ * and plays it through the shared reverb bus, so the announcer sounds like a
+ * hall PA. Where that endpoint is unavailable it falls back to the browser's
+ * SpeechSynthesis, which works everywhere but is always dry — it never enters
+ * the audio graph, so no effect can reach it.
  */
+
+import * as audio from './voiceAudio.js'
 
 /**
  * Voices that exist for novelty rather than speech. Offering "Zarvox" or
@@ -119,7 +126,11 @@ export function onVoicesChanged(callback) {
 if (synth()) {
   resolveVoice()
   synth().addEventListener?.('voiceschanged', () => {
+    const previous = voice?.name
     resolveVoice()
+    // Voices arrive after mount, so the first warm-up may have used the wrong
+    // voice — or none. Redo it once the real choice is known.
+    if (voice?.name !== previous) warmUp()
     listeners.forEach((cb) => cb())
   })
 }
@@ -145,6 +156,37 @@ export function setAnnouncerEnabled(on) {
 export function cancelSpeech() {
   generation++
   synth()?.cancel()
+  audio.stop()
+}
+
+/**
+ * Bring up the reverb-capable engine if this build has the `/api/tts` endpoint.
+ * Resolves to true when the announcer will be routed through the audio graph.
+ */
+export async function initVoiceEngine() {
+  const ok = await audio.probeSupport()
+  if (ok) resolveVoice()
+  return ok
+}
+
+export function usingAudioEngine() {
+  return audio.isSupported()
+}
+
+/**
+ * Warm the cache for lines that must land on the beat.
+ *
+ * Rates must match the ones the cues actually use — the cache is keyed on
+ * (voice, rate, text), so warming "Ten" at the wrong rate is a silent miss.
+ * Safe to call repeatedly; re-run whenever the selected voice changes.
+ */
+export function warmUp() {
+  if (!audio.isSupported()) return
+  const entries = [
+    { text: 'Fight!', rate: 0.8 },
+    ...NUMBERS.slice(1).map((word) => ({ text: word, rate: 1.05 })),
+  ]
+  audio.preload(entries, audio.bareVoiceName(voice?.name))
 }
 
 /**
@@ -152,11 +194,19 @@ export function cancelSpeech() {
  * synthesised speech sound robotic. Energy comes from pace and phrasing.
  */
 export function say(text, { rate = 1, pitch = 1, interrupt = false, force = false } = {}) {
-  const s = synth()
-  if (!s || (!enabled && !force) || !text) return
+  if ((!enabled && !force) || !text) return
 
   // Chrome populates getVoices() asynchronously; re-resolve if we were early.
   if (!voicesReady) resolveVoice()
+
+  // Preferred path: rendered audio through the reverb bus.
+  if (audio.isSupported()) {
+    audio.speak({ text, voice: audio.bareVoiceName(voice?.name), rate, interrupt })
+    return
+  }
+
+  const s = synth()
+  if (!s) return
 
   const utter = new SpeechSynthesisUtterance(text)
   if (voice) utter.voice = voice

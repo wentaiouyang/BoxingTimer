@@ -43,17 +43,31 @@ The bell and beeps run through a convolution reverb, so the bell blooms like it
 is ringing in a hall. The impulse response is decaying noise generated in code,
 so there is still no audio asset to download.
 
-**The announcer voice cannot have reverb.** `SpeechSynthesis` writes straight to
-the system output and exposes no `AudioNode`, `MediaStream` or any other routing
-hook, so no Web Audio effect can reach it — this is a limitation of the API, not
-a missing feature. Verified by enumerating every member of `speechSynthesis` and
-`SpeechSynthesisUtterance`: there is nothing to tap.
+The announcer goes through the same hall, via a second engine.
 
-Putting the voice in the same hall would mean giving up the built-in synthesiser
-for a service that returns audio data (a cloud TTS returning MP3/WAV), decoding
-it into an `AudioBuffer`, and playing it through the existing bus. That buys
-reverb and better voices, at the cost of a network round trip per line, an API
-key, and latency on the bell.
+`SpeechSynthesis` can never be given reverb: it writes straight to the system
+output and exposes no `AudioNode`, `MediaStream` or any other routing hook, so
+nothing in Web Audio can reach it. The way around it is to stop using it. On
+macOS the dev server renders each line to WAV with `say` (`/api/tts`, see
+`vite-plugin-say-tts.js`); the browser decodes it into an `AudioBuffer` and
+plays it through the reverb bus like any other sound.
+
+Two consequences worth knowing:
+
+- **Only the dev server has the endpoint.** A production build has no
+  middleware, so the client probes once at startup and falls back to
+  `SpeechSynthesis` — audible, just dry. The probe checks the response
+  `Content-Type`, not the status code: Vite's SPA fallback answers unknown
+  routes with `index.html` and HTTP 200, so a status-only check would try to
+  decode HTML as audio and the app would go silent.
+- **Timing-critical lines are pre-rendered.** A cold render costs ~650ms, which
+  the countdown cannot absorb. `warmUp()` caches the numbers and "Fight!" at
+  startup and again whenever the voice changes. Rate is part of the cache key,
+  so warmed lines must use the same rate the cues use — otherwise every one is
+  a silent miss and the fetch lands mid-round.
+
+`say` is macOS-only. On other platforms the endpoint returns 501 and the client
+falls back the same way.
 
 ### If nothing is spoken at all
 

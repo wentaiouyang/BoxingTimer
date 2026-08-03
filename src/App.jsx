@@ -57,6 +57,8 @@ export default function App() {
 
   useEffect(() => {
     voice.setPreferredVoice(config.voiceURI)
+    // Cache entries are per-voice, so the warm set is stale after a switch.
+    voice.warmUp()
   }, [config.voiceURI])
 
   const handlers = {
@@ -112,6 +114,18 @@ export default function App() {
 
   const timer = useBoxingTimer(config, handlers)
   useWakeLock(timer.running)
+
+  // Bring up the reverb-capable engine, then warm the lines that must land on
+  // the beat — the countdown and the call to fight cannot wait on a fetch.
+  useEffect(() => {
+    let cancelled = false
+    voice.initVoiceEngine().then((ok) => {
+      if (ok && !cancelled) voice.warmUp()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleStart = () => {
     unlockAudio()
