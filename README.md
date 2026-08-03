@@ -37,6 +37,24 @@ If it still sounds robotic, download better system voices:
 
 Audio needs a user gesture to unlock, which the **Start the fight** button provides.
 
+### Reverb
+
+The bell and beeps run through a convolution reverb, so the bell blooms like it
+is ringing in a hall. The impulse response is decaying noise generated in code,
+so there is still no audio asset to download.
+
+**The announcer voice cannot have reverb.** `SpeechSynthesis` writes straight to
+the system output and exposes no `AudioNode`, `MediaStream` or any other routing
+hook, so no Web Audio effect can reach it — this is a limitation of the API, not
+a missing feature. Verified by enumerating every member of `speechSynthesis` and
+`SpeechSynthesisUtterance`: there is nothing to tap.
+
+Putting the voice in the same hall would mean giving up the built-in synthesiser
+for a service that returns audio data (a cloud TTS returning MP3/WAV), decoding
+it into an `AudioBuffer`, and playing it through the existing bus. That buys
+reverb and better voices, at the cost of a network round trip per line, an API
+key, and latency on the bell.
+
 ### If nothing is spoken at all
 
 Chrome's speech service is shared by the whole browser and can wedge: `speak()`
